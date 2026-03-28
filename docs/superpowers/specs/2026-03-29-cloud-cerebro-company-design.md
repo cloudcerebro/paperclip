@@ -19,14 +19,27 @@ Pipeline with branching, matching the existing Cloud Cerebro service flow:
 ```
 Opportunity (board-provided or CEO-scouted)
   → Research (market analysis, competitor intel, tech feasibility)
-  → Design & Plan (architecture, specs)
-  → Build (engineering, QA)
+  → Design & Plan (architecture, specs, sprint contracts)
+  → Build (engineering sprints, artifact handoff between agents)
+  → Evaluate (QA testing, interactive verification, threshold grading)
   → Deploy & Market (content, SEO, social, enterprise outreach)
 ```
 
 The CEO orchestrates handoffs between phases and can run phases in parallel when appropriate (e.g., marketing prep starts while engineering is finishing).
 
 **Board role**: The user acts as board + occasional sales. They bring in client projects or let the CEO scout opportunities autonomously. They approve milestones and hires.
+
+### Design Patterns (from Anthropic's harness design research)
+
+**Generator-Evaluator Loop**: Engineering and QA operate as a GAN-inspired loop — the engineer generates, QA evaluates interactively, and work iterates until quality thresholds are met. QA must be a separate agent from the builder; self-evaluation produces biased results.
+
+**Sprint Contracts**: Before implementation begins, the CTO and Head of Engineering define concrete "done" criteria for each sprint. QA grades against these criteria, not subjective judgment.
+
+**Artifact-Based Handoff**: Agents communicate via structured files and documents, not conversation history. Each phase produces deliverables that the next phase reads with fresh context. This aligns with Paperclip's heartbeat model where agents wake up fresh.
+
+**Planner-Generator-Evaluator Pipeline**: Maps to CTO (planner/spec writer) → Engineers (generator/builder) → QA (evaluator/tester). The planner expands goals into detailed specs emphasizing scope and product context, not implementation details.
+
+**Continuous Harness Evolution**: The company should periodically re-evaluate its own structure and agent workflows. As models improve, scaffolding that was once necessary may become overhead. Strip away non-essential process when agents can handle more autonomously.
 
 ## 3. Org Chart — Seed Crew (7 agents)
 
