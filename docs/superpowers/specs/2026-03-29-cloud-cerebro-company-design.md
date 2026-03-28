@@ -67,8 +67,9 @@ Hires are proposed by the CEO or team leads. Board approves all new hires.
 - Propose new hires when capacity gaps emerge
 - Scout market opportunities autonomously when not given board directives
 - Report progress and blockers to the board
+- **Assimilate board-provided intel**: The board may drop links (articles, GitHub repos, YouTube videos, docs), new frameworks, or raw information at any time. The CEO must ingest this, determine relevance, and route appropriately — delegate to Head of Research for deep analysis, update technical direction via CTO, or feed into marketing strategy. Nothing the board shares should be ignored or left unprocessed.
 
-**Workflow context**: Receives high-level goals from the board or identifies opportunities independently. Decomposes into research briefs for the CTO. After research completes, creates engineering projects. When builds ship, triggers marketing campaigns. Approves cross-team decisions.
+**Workflow context**: Receives high-level goals from the board or identifies opportunities independently. Also receives ad-hoc intel drops (URLs, repos, frameworks, news) from the board and triages them: research-worthy items go to the CTO/Head of Research, technical items inform engineering direction, market-relevant items feed marketing. Decomposes goals into research briefs for the CTO. After research completes, creates engineering projects. When builds ship, triggers marketing campaigns. Approves cross-team decisions.
 
 ### 4.2 CTO
 
