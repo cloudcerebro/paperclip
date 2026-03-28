@@ -1,0 +1,7 @@
+schema: paperclip/v1
+agents:
+  youtube-parser:
+    adapter:
+      type: claude_local
+      config:
+        model: claude-sonnet-4-6
