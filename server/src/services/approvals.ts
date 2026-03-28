@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { approvalComments, approvals } from "@paperclipai/db";
+import { approvalComments, approvals, authUsers } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { agentService } from "./agents.js";
@@ -234,8 +234,12 @@ export function approvalService(db: Db) {
       const existing = await getExistingApproval(approvalId);
       const { censorUsernameInLogs } = await instanceSettings.getGeneral();
       return db
-        .select()
+        .select({ ...getTableColumns(approvalComments), authorUserName: authUsers.name })
         .from(approvalComments)
+        .leftJoin(
+          authUsers,
+          eq(approvalComments.authorUserId, authUsers.id),
+        )
         .where(
           and(
             eq(approvalComments.approvalId, approvalId),

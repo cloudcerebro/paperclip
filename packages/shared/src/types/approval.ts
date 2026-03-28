@@ -21,6 +21,7 @@ export interface ApprovalComment {
   approvalId: string;
   authorAgentId: string | null;
   authorUserId: string | null;
+  authorUserName: string | null;
   body: string;
   createdAt: Date;
   updatedAt: Date;

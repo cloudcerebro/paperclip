@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, heartbeatRuns, issues } from "@paperclipai/db";
+import { activityLog, authUsers, heartbeatRuns, issues } from "@paperclipai/db";
 
 export interface ActivityFilters {
   companyId: string;
@@ -26,8 +26,15 @@ export function activityService(db: Db) {
       }
 
       return db
-        .select({ activityLog })
+        .select({ activityLog, actorName: authUsers.name })
         .from(activityLog)
+        .leftJoin(
+          authUsers,
+          and(
+            eq(activityLog.actorType, sql`'user'`),
+            eq(activityLog.actorId, authUsers.id),
+          ),
+        )
         .leftJoin(
           issues,
           and(
@@ -45,13 +52,23 @@ export function activityService(db: Db) {
           ),
         )
         .orderBy(desc(activityLog.createdAt))
-        .then((rows) => rows.map((r) => r.activityLog));
+        .then((rows) => rows.map((r) => ({
+          ...r.activityLog,
+          actorName: r.actorName ?? null,
+        })));
     },
 
     forIssue: (issueId: string) =>
       db
-        .select()
+        .select({ ...getTableColumns(activityLog), actorName: authUsers.name })
         .from(activityLog)
+        .leftJoin(
+          authUsers,
+          and(
+            eq(activityLog.actorType, sql`'user'`),
+            eq(activityLog.actorId, authUsers.id),
+          ),
+        )
         .where(
           and(
             eq(activityLog.entityType, "issue"),

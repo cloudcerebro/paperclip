@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { activityLog } from "@paperclipai/db";
+import { activityLog, authUsers } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import { PLUGIN_EVENT_TYPES, type PluginEventType } from "@paperclipai/shared";
 import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { publishLiveEvent } from "./live-events.js";
@@ -54,12 +55,23 @@ export async function logActivity(db: Db, input: LogActivityInput) {
     details: redactedDetails,
   });
 
+  let actorName: string | null = null;
+  if (input.actorType === "user" && input.actorId) {
+    const user = await db
+      .select({ name: authUsers.name })
+      .from(authUsers)
+      .where(eq(authUsers.id, input.actorId))
+      .then((rows) => rows[0] ?? null);
+    actorName = user?.name ?? null;
+  }
+
   publishLiveEvent({
     companyId: input.companyId,
     type: "activity.logged",
     payload: {
       actorType: input.actorType,
       actorId: input.actorId,
+      actorName,
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId,

@@ -49,13 +49,14 @@ function resolveActorLabel(
   companyId: string,
   actorType: string | null,
   actorId: string | null,
+  actorName?: string | null,
 ): string {
   if (actorType === "agent" && actorId) {
     return resolveAgentName(queryClient, companyId, actorId) ?? `Agent ${shortId(actorId)}`;
   }
   if (actorType === "system") return "System";
   if (actorType === "user" && actorId) {
-    return "Board";
+    return actorName ?? "Board";
   }
   return "Someone";
 }
@@ -279,13 +280,14 @@ function buildActivityToast(
   const details = readRecord(payload.details);
   const actorId = readString(payload.actorId);
   const actorType = readString(payload.actorType);
+  const actorName = readString(payload.actorName);
 
   if (entityType !== "issue" || !entityId || !action || !ISSUE_TOAST_ACTIONS.has(action)) {
     return null;
   }
 
   const issue = resolveIssueToastContext(queryClient, companyId, entityId, details);
-  const actor = resolveActorLabel(queryClient, companyId, actorType, actorId);
+  const actor = resolveActorLabel(queryClient, companyId, actorType, actorId, actorName);
   const isSelfActivity =
     (actorType === "user" && !!currentActor.userId && actorId === currentActor.userId) ||
     (actorType === "agent" && !!currentActor.agentId && actorId === currentActor.agentId);

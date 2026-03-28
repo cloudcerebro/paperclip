@@ -24,6 +24,8 @@ import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
+import { authApi } from "../api/auth";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import {
   DEFAULT_INSTANCE_SETTINGS_PATH,
@@ -85,6 +87,19 @@ export function Layout() {
     },
     refetchIntervalInBackground: true,
   });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+    retry: false,
+  });
+  const sessionUserName = session?.user?.name ?? null;
+  const sessionUserEmail = session?.user?.email ?? null;
+  const sessionDisplayName = sessionUserName || sessionUserEmail;
+  const sessionUserInitials = sessionDisplayName
+    ? sessionDisplayName.trim().split(/[\s@]+/).length >= 2
+      ? (sessionDisplayName.trim().split(/[\s@]+/)[0][0] + sessionDisplayName.trim().split(/[\s@]+/).slice(-1)[0][0]).toUpperCase()
+      : sessionDisplayName.slice(0, 2).toUpperCase()
+    : null;
 
   useEffect(() => {
     if (companiesLoading || onboardingTriggered.current) return;
@@ -294,7 +309,18 @@ export function Layout() {
               <CompanyRail />
               {isInstanceSettingsRoute ? <InstanceSidebar /> : <Sidebar />}
             </div>
-            <div className="border-t border-r border-border px-3 py-2 bg-background">
+            <div className="border-t border-r border-border px-3 py-2 bg-background space-y-1">
+              {sessionDisplayName && (
+                <div className="flex items-center gap-2 px-3 py-1.5">
+                  <Avatar size="sm">
+                    <AvatarFallback>{sessionUserInitials}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">{sessionDisplayName}</p>
+                    {sessionUserName && sessionUserEmail && <p className="text-[11px] text-muted-foreground truncate">{sessionUserEmail}</p>}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-1">
                 <a
                   href="https://docs.paperclip.ing/"
@@ -352,7 +378,18 @@ export function Layout() {
                 {isInstanceSettingsRoute ? <InstanceSidebar /> : <Sidebar />}
               </div>
             </div>
-            <div className="border-t border-r border-border px-3 py-2">
+            <div className="border-t border-r border-border px-3 py-2 space-y-1">
+              {sessionDisplayName && (
+                <div className="flex items-center gap-2 px-3 py-1.5">
+                  <Avatar size="sm">
+                    <AvatarFallback>{sessionUserInitials}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">{sessionDisplayName}</p>
+                    {sessionUserName && sessionUserEmail && <p className="text-[11px] text-muted-foreground truncate">{sessionUserEmail}</p>}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-1">
                 <a
                   href="https://docs.paperclip.ing/"
