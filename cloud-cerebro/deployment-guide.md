@@ -6,23 +6,28 @@ Deploy Paperclip with the Cloud Cerebro company on a dedicated Mac Mini, exposed
 
 - Mac Mini with macOS
 - Claude Code CLI installed and authenticated (subscription active)
-- `cloudflared` installed
-- DNS domain: `cloudcerebro.com` on Cloudflare
+- `cloudflared` installed and logged in (`cloudflared tunnel login` already done)
+- DNS domain: `cloudcerebro.com` managed on Cloudflare
 
 ## Step 1: Install Node.js and pnpm
 
 ```sh
-# Install Node.js 20+ (if not already installed)
+# Install Node.js 22 (if not already installed)
 brew install node@22
 
-# Install pnpm
+# Install pnpm 9
 npm install -g pnpm@9
 ```
 
 Verify:
 ```sh
-node --version    # should be >= 20
-pnpm --version    # should be >= 9
+node --version    # expect: v22.x.x
+pnpm --version    # expect: 9.x.x
+```
+
+If either command fails, check that brew's bin is in PATH:
+```sh
+export PATH="/opt/homebrew/bin:$PATH"
 ```
 
 ## Step 2: Clone the repo and build
@@ -30,152 +35,222 @@ pnpm --version    # should be >= 9
 ```sh
 cd ~
 git clone https://github.com/cloudcerebro/paperclip.git
-cd paperclip
+cd ~/paperclip
 pnpm install
 pnpm build
 ```
 
-## Step 3: Configure Paperclip in authenticated mode
+Expected: build completes with no errors. Warnings about plugin-sdk bins are safe to ignore.
+
+## Step 3: Generate auth secret
+
+Generate and persist the auth secret before configuring Paperclip:
 
 ```sh
-pnpm paperclipai onboard
-```
-
-When prompted:
-1. **Deployment mode**: choose `authenticated`
-2. **Exposure**: choose `public`
-3. **Public URL**: enter `https://paperclip.cloudcerebro.com`
-
-This writes your config to `~/.paperclip/instances/default/config.json`.
-
-## Step 4: Set secrets
-
-Create a `.env` file or export these before starting the server:
-
-```sh
-# Generate a strong random secret (run once, save the output)
-openssl rand -base64 32
-
-# Set it
-export BETTER_AUTH_SECRET="<paste-your-generated-secret>"
-export PAPERCLIP_SECRETS_STRICT_MODE=true
-```
-
-For persistence, add these to `~/.zshrc` or `~/.zprofile`:
-
-```sh
-echo 'export BETTER_AUTH_SECRET="<your-secret>"' >> ~/.zshrc
+GENERATED_SECRET=$(openssl rand -base64 32)
+echo "export BETTER_AUTH_SECRET=\"${GENERATED_SECRET}\"" >> ~/.zshrc
 echo 'export PAPERCLIP_SECRETS_STRICT_MODE=true' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-## Step 5: Import Cloud Cerebro company
+Verify:
+```sh
+echo $BETTER_AUTH_SECRET    # should print a 44-char base64 string
+```
 
-Start the server temporarily to import:
+## Step 4: Configure Paperclip in authenticated mode
+
+Use the `configure` command with explicit flags to avoid interactive prompts:
 
 ```sh
-pnpm dev:once &
-sleep 20
+cd ~/paperclip
 
-# Verify server is running
+# Initialize Paperclip data directory
+pnpm paperclipai onboard --mode authenticated --exposure public --url https://paperclip.cloudcerebro.com --yes
+```
+
+If the `--mode` flags are not supported by the current version, use the configure command instead:
+
+```sh
+pnpm paperclipai configure --section server
+```
+
+And select: `authenticated` → `public` → `https://paperclip.cloudcerebro.com`
+
+Alternatively, write the config directly:
+
+```sh
+mkdir -p ~/.paperclip/instances/default
+cat > ~/.paperclip/instances/default/config.json << 'CONFIGEOF'
+{
+  "server": {
+    "deploymentMode": "authenticated",
+    "deploymentExposure": "public",
+    "authPublicBaseUrl": "https://paperclip.cloudcerebro.com",
+    "authBaseUrlMode": "explicit",
+    "host": "0.0.0.0",
+    "port": 3100
+  }
+}
+CONFIGEOF
+```
+
+Note: if a config.json already exists, merge these fields rather than overwriting.
+
+Run doctor to validate:
+```sh
+pnpm paperclipai doctor --repair
+```
+
+## Step 5: Start server and import Cloud Cerebro
+
+```sh
+cd ~/paperclip
+
+# Start the server in background, wait for it to be ready
+pnpm dev:once &
+SERVER_PID=$!
+
+# Poll until healthy (up to 60 seconds)
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3100/api/health > /dev/null 2>&1; then
+    echo "Server is ready"
+    break
+  fi
+  sleep 2
+done
+
+# Verify health
 curl -s http://localhost:3100/api/health
 
 # Import the company
 pnpm paperclipai company import ./cloud-cerebro --yes
 
 # Stop the temporary server
-kill %1
+kill $SERVER_PID 2>/dev/null
+wait $SERVER_PID 2>/dev/null
 ```
+
+Expected output should show: 6 agents created, 1 project created.
 
 ## Step 6: Set up Cloudflare Tunnel
 
+**IMPORTANT**: If `cloudflared tunnel login` has not been done yet, the user must do this manually — it opens a browser for Cloudflare authentication. Claude Code cannot complete this step.
+
 ```sh
-# Login to Cloudflare (if not already)
-cloudflared tunnel login
+# Create the tunnel (capture the tunnel ID)
+TUNNEL_OUTPUT=$(cloudflared tunnel create paperclip 2>&1)
+TUNNEL_ID=$(echo "$TUNNEL_OUTPUT" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+echo "Tunnel ID: $TUNNEL_ID"
 
-# Create tunnel
-cloudflared tunnel create paperclip
+# If tunnel already exists, get its ID instead:
+# TUNNEL_ID=$(cloudflared tunnel list | grep paperclip | awk '{print $1}')
 
-# Route DNS — points paperclip.cloudcerebro.com to this tunnel
+# Route DNS
 cloudflared tunnel route dns paperclip paperclip.cloudcerebro.com
 ```
 
-Create the tunnel config file at `~/.cloudflared/config.yml`:
+Create the tunnel config:
 
-```yaml
-tunnel: <tunnel-id-from-create-step>
-credentials-file: /Users/<username>/.cloudflared/<tunnel-id>.json
+```sh
+WHOAMI=$(whoami)
+cat > ~/.cloudflared/config.yml << TUNNELEOF
+tunnel: ${TUNNEL_ID}
+credentials-file: /Users/${WHOAMI}/.cloudflared/${TUNNEL_ID}.json
 
 ingress:
   - hostname: paperclip.cloudcerebro.com
     service: http://localhost:3100
   - service: http_status:404
+TUNNELEOF
 ```
 
-Replace `<tunnel-id>` with the ID output from `cloudflared tunnel create`.
-
-Test the tunnel:
-
+Verify the config:
 ```sh
-# Start Paperclip
-pnpm dev:once &
-sleep 20
-
-# Start tunnel
-cloudflared tunnel run paperclip
-
-# Visit https://paperclip.cloudcerebro.com in your browser
+cat ~/.cloudflared/config.yml
+cloudflared tunnel info paperclip
 ```
 
-## Step 7: Keep Paperclip running with pm2
+## Step 7: Install pm2 and start services
 
 ```sh
-# Install pm2
 npm install -g pm2
 
-# Start Paperclip
 cd ~/paperclip
+
+# Start Paperclip
 pm2 start "pnpm dev:once" --name paperclip --cwd ~/paperclip
+
+# Wait for Paperclip to be ready
+sleep 20
+curl -s http://localhost:3100/api/health
 
 # Start Cloudflare Tunnel
 pm2 start "cloudflared tunnel run paperclip" --name cloudflare-tunnel
 
-# Auto-start on reboot
-pm2 startup
-# Follow the command it prints (copy-paste and run it)
-
-# Save current process list
+# Save process list
 pm2 save
 ```
 
-Useful pm2 commands:
-
+Set up auto-start on reboot:
 ```sh
-pm2 list              # see running processes
-pm2 logs paperclip    # view Paperclip logs
-pm2 logs cloudflare-tunnel  # view tunnel logs
-pm2 restart paperclip # restart after updates
-pm2 stop paperclip    # stop the server
+pm2 startup
 ```
 
-## Step 8: Claim board ownership
+This prints a command starting with `sudo env PATH=...`. The user must copy-paste and run that command manually (it requires sudo). Claude Code should print the command and instruct the user to run it.
+
+After running the sudo command:
+```sh
+pm2 save
+```
+
+Verify both processes are running:
+```sh
+pm2 list
+```
+
+Expected: both `paperclip` (online) and `cloudflare-tunnel` (online).
+
+## Step 8: Verify deployment
+
+```sh
+# Check local server
+curl -s http://localhost:3100/api/health
+
+# Check tunnel (may take 30-60 seconds for DNS to propagate)
+curl -sf https://paperclip.cloudcerebro.com/api/health
+```
+
+Both should return `{"status":"ok",...}`.
+
+If the external URL fails, wait a minute for DNS propagation and try again:
+```sh
+dig paperclip.cloudcerebro.com    # should show CNAME to cfargotunnel.com
+```
+
+## Steps Requiring Human Action (cannot be automated)
+
+The following steps must be done by a human in a web browser:
+
+### Claim board ownership
 
 1. Open `https://paperclip.cloudcerebro.com` in your browser
 2. Sign up with your email and password
-3. Check the Paperclip server logs for the one-time board claim URL:
+3. Find the board claim URL in the server logs:
    ```sh
-   pm2 logs paperclip | grep "board-claim"
+   pm2 logs paperclip --lines 200 | grep "board-claim"
    ```
-4. Open the claim URL while logged in — this promotes you to board admin
+4. Open that URL in your browser while logged in — this promotes you to board admin
 
-## Step 9: Add second board member
+### Add second board member
 
 1. Second person opens `https://paperclip.cloudcerebro.com`
 2. Signs up with their email and password
-3. You (as admin) grant them board access from the dashboard settings
+3. Board admin grants them access from the dashboard settings
 
-## Step 10: Configure agent heartbeats
+### Configure agent heartbeats
 
-From the dashboard at `https://paperclip.cloudcerebro.com/CLO/dashboard`:
+From `https://paperclip.cloudcerebro.com/CLO/dashboard`:
 
 1. Go to **Agents** → click each agent → **Configuration**
 2. Set heartbeat schedules:
@@ -186,28 +261,24 @@ From the dashboard at `https://paperclip.cloudcerebro.com/CLO/dashboard`:
    - Head of Engineering: every 8 hours
    - Head of Marketing: every 12 hours
 
-## Step 11: Verify Claude Code connectivity
-
-Each agent uses `claude_local` adapter which runs Claude Code CLI. Verify it works:
+### Verify agent connectivity
 
 1. Go to any agent in the dashboard
-2. Click **Run Test** to verify the CLI responds
-3. If it fails, ensure Claude Code is authenticated on the Mac Mini:
+2. Click **Run Test** to verify Claude Code CLI responds
+3. If it fails, check Claude Code auth on the Mac Mini:
    ```sh
    claude --version
    ```
 
 ## Updating
 
-To pull latest changes and redeploy:
-
 ```sh
 cd ~/paperclip
 
-# Pull from your fork
+# Pull latest from fork
 git pull origin master
 
-# Pull upstream updates
+# Optionally pull upstream updates
 git pull https://github.com/paperclipai/paperclip.git master --rebase
 
 # Rebuild and restart
@@ -218,15 +289,14 @@ pm2 restart paperclip
 
 ## Backup
 
-Paperclip auto-backs up the database every 60 minutes to:
+Paperclip auto-backs up every 60 minutes to:
 ```
 ~/.paperclip/instances/default/data/backups/
 ```
 
 Manual backup:
 ```sh
-cd ~/paperclip
-pnpm paperclipai db:backup
+cd ~/paperclip && pnpm paperclipai db:backup
 ```
 
 Configure backup settings:
@@ -238,8 +308,8 @@ pnpm paperclipai configure --section database
 
 **Server won't start:**
 ```sh
-pm2 logs paperclip --lines 50   # check logs
-pnpm paperclipai doctor          # run diagnostics
+pm2 logs paperclip --lines 50
+pnpm paperclipai doctor --repair
 ```
 
 **Tunnel not connecting:**
@@ -249,29 +319,33 @@ cloudflared tunnel info paperclip
 ```
 
 **Agent runs failing:**
-- Check agent runs in the dashboard under **Agents → [agent] → Runs**
-- Verify Claude Code auth: `claude --version` on the Mac Mini
-- Check if the subscription is active
+```sh
+# Check Claude Code is working
+claude --version
 
-**Database reset (nuclear option):**
+# Check agent runs in dashboard: Agents → [agent] → Runs
+```
+
+**Database reset (destroys all data):**
 ```sh
 pm2 stop paperclip
 rm -rf ~/.paperclip/instances/default/db
 pm2 start paperclip
-# Re-import the company:
+sleep 20
 pnpm paperclipai company import ./cloud-cerebro --yes
 ```
 
-**Can't access from browser:**
-- Verify tunnel is running: `pm2 list`
-- Check DNS: `dig paperclip.cloudcerebro.com`
-- Verify Cloudflare dashboard shows the tunnel as healthy
+**External URL not resolving:**
+```sh
+dig paperclip.cloudcerebro.com
+pm2 list    # both processes should be "online"
+```
 
 ## Security Checklist
 
-- [ ] `BETTER_AUTH_SECRET` set to a strong random value (not the default)
-- [ ] `PAPERCLIP_SECRETS_STRICT_MODE=true`
-- [ ] Board ownership claimed by you
-- [ ] Second board member added (not just anyone who signs up)
-- [ ] Consider enabling Cloudflare Access for extra zero-trust layer
-- [ ] Regular backups verified (check `~/.paperclip/instances/default/data/backups/`)
+- [ ] `BETTER_AUTH_SECRET` set to a strong random value (verify with `echo $BETTER_AUTH_SECRET`)
+- [ ] `PAPERCLIP_SECRETS_STRICT_MODE=true` (verify with `echo $PAPERCLIP_SECRETS_STRICT_MODE`)
+- [ ] Board ownership claimed by admin user
+- [ ] `authDisableSignUp` considered after board members are registered (prevents random signups)
+- [ ] Consider enabling Cloudflare Access for extra zero-trust auth layer
+- [ ] Backups verified: `ls ~/.paperclip/instances/default/data/backups/`
