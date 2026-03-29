@@ -24,7 +24,6 @@ import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
-import { authApi } from "../api/auth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import {
@@ -87,13 +86,17 @@ export function Layout() {
     },
     refetchIntervalInBackground: true,
   });
-  const { data: session } = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
+  const { data: currentUser } = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const res = await fetch("/api/me", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ id: string | null; name: string | null; email: string | null }>;
+    },
     retry: false,
   });
-  const sessionUserName = session?.user?.name ?? null;
-  const sessionUserEmail = session?.user?.email ?? null;
+  const sessionUserName = currentUser?.name ?? null;
+  const sessionUserEmail = currentUser?.email ?? null;
   const sessionDisplayName = sessionUserName || sessionUserEmail;
   const sessionUserInitials = sessionDisplayName
     ? sessionDisplayName.trim().split(/[\s@]+/).length >= 2
@@ -379,17 +382,15 @@ export function Layout() {
               </div>
             </div>
             <div className="border-t border-r border-border px-3 py-2 space-y-1">
-              {sessionDisplayName && (
-                <div className="flex items-center gap-2 px-3 py-1.5">
-                  <Avatar size="sm">
-                    <AvatarFallback>{sessionUserInitials}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium truncate">{sessionDisplayName}</p>
-                    {sessionUserName && sessionUserEmail && <p className="text-[11px] text-muted-foreground truncate">{sessionUserEmail}</p>}
-                  </div>
+              <div className="flex items-center gap-2 px-3 py-1.5">
+                <Avatar size="sm">
+                  <AvatarFallback>{sessionUserInitials ?? "??"}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium truncate">{sessionDisplayName ?? "..."}</p>
+                  {sessionUserName && sessionUserEmail && <p className="text-[11px] text-muted-foreground truncate">{sessionUserEmail}</p>}
                 </div>
-              )}
+              </div>
               <div className="flex items-center gap-1">
                 <a
                   href="https://docs.paperclip.ing/"

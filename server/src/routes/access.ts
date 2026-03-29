@@ -1566,6 +1566,19 @@ export function accessRoutes(
   const boardAuth = boardAuthService(db);
   const agents = agentService(db);
 
+  router.get("/me", async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      res.json({ id: null, name: null, email: null });
+      return;
+    }
+    const user = await db
+      .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
+      .from(authUsers)
+      .where(eq(authUsers.id, req.actor.userId))
+      .then((rows) => rows[0] ?? null);
+    res.json(user ?? { id: req.actor.userId, name: null, email: null });
+  });
+
   async function assertInstanceAdmin(req: Request) {
     if (req.actor.type !== "board") throw unauthorized();
     if (isLocalImplicit(req)) return;
