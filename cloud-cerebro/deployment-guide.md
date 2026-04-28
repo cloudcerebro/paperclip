@@ -93,10 +93,13 @@ cat > ~/.paperclip/instances/default/config.json << 'CONFIGEOF'
 {
   "server": {
     "deploymentMode": "authenticated",
-    "deploymentExposure": "public",
-    "authPublicBaseUrl": "https://cloudcerebro.siva2k.com",
-    "authBaseUrlMode": "explicit",
+    "exposure": "public",
     "port": 3100
+  },
+  "auth": {
+    "baseUrlMode": "explicit",
+    "publicBaseUrl": "https://cloudcerebro.siva2k.com",
+    "disableSignUp": false
   }
 }
 CONFIGEOF
