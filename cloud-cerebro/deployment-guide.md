@@ -181,18 +181,36 @@ cat ~/.cloudflared/config.yml
 cloudflared tunnel info paperclip
 ```
 
-## Step 7: Install pm2 and start services
+## Step 7: Build production artifacts
+
+`pnpm dev:once` runs the Vite dev middleware, which serves the UI through dev-only module URLs (`/@vite/client`, `/src/main.tsx`). Upstream's auth hardening blocks those paths in `authenticated + public` mode, so the React app fails to load. Use the production build instead.
+
+```sh
+cd ~/paperclip
+
+# Build the UI and copy it into server/ui-dist (the static path the server serves)
+pnpm --filter @paperclipai/server prepare:ui-dist
+
+# Build the server's TypeScript output
+pnpm --filter @paperclipai/server build
+
+# Verify both artifacts exist
+ls server/ui-dist/index.html server/dist/index.js
+```
+
+## Step 8: Install pm2 and start services
 
 ```sh
 npm install -g pm2
 
 cd ~/paperclip
 
-# Start Paperclip
-pm2 start "pnpm dev:once" --name paperclip --cwd ~/paperclip
+# Start Paperclip in production mode (matches the Dockerfile CMD)
+pm2 start "node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js" \
+  --name paperclip --cwd "$(pwd)" --update-env
 
 # Wait for Paperclip to be ready
-sleep 20
+sleep 5
 curl -s http://localhost:3100/api/health
 
 # Start Cloudflare Tunnel
@@ -221,7 +239,7 @@ pm2 list
 
 Expected: both `paperclip` (online) and `cloudflare-tunnel` (online).
 
-## Step 8: Verify deployment
+## Step 9: Verify deployment
 
 ```sh
 # Check local server
@@ -291,10 +309,11 @@ git pull origin master
 # Optionally pull upstream updates
 git pull https://github.com/paperclipai/paperclip.git master --rebase
 
-# Rebuild and restart
+# Rebuild UI + server (production artifacts) and restart
 pnpm install
-pnpm build
-pm2 restart paperclip
+pnpm --filter @paperclipai/server prepare:ui-dist
+pnpm --filter @paperclipai/server build
+pm2 restart paperclip --update-env
 ```
 
 ## Backup
