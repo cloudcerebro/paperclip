@@ -1,6 +1,6 @@
 # Cloud Cerebro — Mac Mini Deployment Guide
 
-Deploy Paperclip with the Cloud Cerebro company on a dedicated Mac Mini, exposed via Cloudflare Tunnel at `paperclip.cloudcerebro.com`.
+Deploy Paperclip with the Cloud Cerebro company on a dedicated Mac Mini, exposed via Cloudflare Tunnel at `cloudcerebro.siva2k.com`.
 
 ## Prerequisites (already in place)
 
@@ -42,20 +42,28 @@ pnpm build
 
 Expected: build completes with no errors. Warnings about plugin-sdk bins are safe to ignore.
 
-## Step 3: Generate auth secret
+## Step 3: Generate auth secret and set runtime env
 
-Generate and persist the auth secret before configuring Paperclip:
+Generate the auth secret and set the runtime env vars before configuring Paperclip:
 
 ```sh
 GENERATED_SECRET=$(openssl rand -base64 32)
-echo "export BETTER_AUTH_SECRET=\"${GENERATED_SECRET}\"" >> ~/.zshrc
-echo 'export PAPERCLIP_SECRETS_STRICT_MODE=true' >> ~/.zshrc
+{
+  echo "export BETTER_AUTH_SECRET=\"${GENERATED_SECRET}\""
+  echo 'export PAPERCLIP_SECRETS_STRICT_MODE=true'
+  echo 'export PAPERCLIP_BIND=loopback'
+  echo 'export PAPERCLIP_API_URL=https://cloudcerebro.siva2k.com'
+} >> ~/.zshrc
 source ~/.zshrc
 ```
+
+`PAPERCLIP_BIND=loopback` keeps the server reachable only on localhost — Cloudflare Tunnel runs on the same Mac, so this is sufficient and avoids exposing port 3100 on your LAN. `PAPERCLIP_API_URL` tells the server its public-facing URL so auth callbacks and invite emails use the tunnel domain instead of `localhost:3100`.
 
 Verify:
 ```sh
 echo $BETTER_AUTH_SECRET    # should print a 44-char base64 string
+echo $PAPERCLIP_BIND        # loopback
+echo $PAPERCLIP_API_URL     # https://cloudcerebro.siva2k.com
 ```
 
 ## Step 4: Configure Paperclip in authenticated mode
@@ -66,7 +74,7 @@ Use the `configure` command with explicit flags to avoid interactive prompts:
 cd ~/paperclip
 
 # Initialize Paperclip data directory
-pnpm paperclipai onboard --mode authenticated --exposure public --url https://paperclip.cloudcerebro.com --yes
+pnpm paperclipai onboard --mode authenticated --exposure public --url https://cloudcerebro.siva2k.com --yes
 ```
 
 If the `--mode` flags are not supported by the current version, use the configure command instead:
@@ -75,7 +83,7 @@ If the `--mode` flags are not supported by the current version, use the configur
 pnpm paperclipai configure --section server
 ```
 
-And select: `authenticated` → `public` → `https://paperclip.cloudcerebro.com`
+And select: `authenticated` → `public` → `https://cloudcerebro.siva2k.com`
 
 Alternatively, write the config directly:
 
@@ -86,9 +94,8 @@ cat > ~/.paperclip/instances/default/config.json << 'CONFIGEOF'
   "server": {
     "deploymentMode": "authenticated",
     "deploymentExposure": "public",
-    "authPublicBaseUrl": "https://paperclip.cloudcerebro.com",
+    "authPublicBaseUrl": "https://cloudcerebro.siva2k.com",
     "authBaseUrlMode": "explicit",
-    "host": "0.0.0.0",
     "port": 3100
   }
 }
@@ -147,7 +154,7 @@ echo "Tunnel ID: $TUNNEL_ID"
 # TUNNEL_ID=$(cloudflared tunnel list | grep paperclip | awk '{print $1}')
 
 # Route DNS
-cloudflared tunnel route dns paperclip paperclip.cloudcerebro.com
+cloudflared tunnel route dns paperclip cloudcerebro.siva2k.com
 ```
 
 Create the tunnel config:
@@ -159,7 +166,7 @@ tunnel: ${TUNNEL_ID}
 credentials-file: /Users/${WHOAMI}/.cloudflared/${TUNNEL_ID}.json
 
 ingress:
-  - hostname: paperclip.cloudcerebro.com
+  - hostname: cloudcerebro.siva2k.com
     service: http://localhost:3100
   - service: http_status:404
 TUNNELEOF
@@ -218,14 +225,14 @@ Expected: both `paperclip` (online) and `cloudflare-tunnel` (online).
 curl -s http://localhost:3100/api/health
 
 # Check tunnel (may take 30-60 seconds for DNS to propagate)
-curl -sf https://paperclip.cloudcerebro.com/api/health
+curl -sf https://cloudcerebro.siva2k.com/api/health
 ```
 
 Both should return `{"status":"ok",...}`.
 
 If the external URL fails, wait a minute for DNS propagation and try again:
 ```sh
-dig paperclip.cloudcerebro.com    # should show CNAME to cfargotunnel.com
+dig cloudcerebro.siva2k.com    # should show CNAME to cfargotunnel.com
 ```
 
 ## Steps Requiring Human Action (cannot be automated)
@@ -234,7 +241,7 @@ The following steps must be done by a human in a web browser:
 
 ### Claim board ownership
 
-1. Open `https://paperclip.cloudcerebro.com` in your browser
+1. Open `https://cloudcerebro.siva2k.com` in your browser
 2. Sign up with your email and password
 3. Find the board claim URL in the server logs:
    ```sh
@@ -244,13 +251,13 @@ The following steps must be done by a human in a web browser:
 
 ### Add second board member
 
-1. Second person opens `https://paperclip.cloudcerebro.com`
+1. Second person opens `https://cloudcerebro.siva2k.com`
 2. Signs up with their email and password
 3. Board admin grants them access from the dashboard settings
 
 ### Configure agent heartbeats
 
-From `https://paperclip.cloudcerebro.com/CLO/dashboard`:
+From `https://cloudcerebro.siva2k.com/CLO/dashboard`:
 
 1. Go to **Agents** → click each agent → **Configuration**
 2. Set heartbeat schedules:
@@ -337,7 +344,7 @@ pnpm paperclipai company import ./cloud-cerebro --yes
 
 **External URL not resolving:**
 ```sh
-dig paperclip.cloudcerebro.com
+dig cloudcerebro.siva2k.com
 pm2 list    # both processes should be "online"
 ```
 
@@ -345,7 +352,9 @@ pm2 list    # both processes should be "online"
 
 - [ ] `BETTER_AUTH_SECRET` set to a strong random value (verify with `echo $BETTER_AUTH_SECRET`)
 - [ ] `PAPERCLIP_SECRETS_STRICT_MODE=true` (verify with `echo $PAPERCLIP_SECRETS_STRICT_MODE`)
+- [ ] `PAPERCLIP_BIND=loopback` (server only reachable via localhost; tunnel handles ingress)
 - [ ] Board ownership claimed by admin user
 - [ ] `authDisableSignUp` considered after board members are registered (prevents random signups)
 - [ ] Consider enabling Cloudflare Access for extra zero-trust auth layer
 - [ ] Backups verified: `ls ~/.paperclip/instances/default/data/backups/`
+- [ ] Master key backed up off the Mini: `~/.paperclip/instances/default/secrets/master.key` (without it, encrypted secrets cannot be recovered after disaster)
